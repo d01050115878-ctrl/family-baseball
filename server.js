@@ -16,6 +16,12 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 const LEN = Rules.LEN;
+const ALLOWED_LENS = Rules.ALLOWED_LENS;
+
+function normalizeLen(len) {
+  const n = Number(len);
+  return ALLOWED_LENS.includes(n) ? n : LEN;
+}
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/healthz', (req, res) => res.send('ok'));
@@ -38,9 +44,10 @@ function genToken() {
   return crypto.randomBytes(12).toString('hex');
 }
 
-function makeRoom(code) {
+function makeRoom(code, len) {
   return {
     code,
+    len: normalizeLen(len),
     players: {}, // token -> {token,name,avatar,role,secret,socketId,connected}
     turn: null,  // 지금 추측할 차례인 token
     history: [], // {by, guess, strikes, balls, out}
@@ -71,7 +78,7 @@ io.on('connection', (socket) => {
   socket.on('room:create', (payload = {}, cb) => {
     try {
       const code = genCode();
-      const room = makeRoom(code);
+      const room = makeRoom(code, payload.len);
       const token = genToken();
       room.players[token] = {
         token, name: (payload.name || '플레이어').slice(0, 12), avatar: payload.avatar || '🙂',
@@ -81,7 +88,7 @@ io.on('connection', (socket) => {
       socket.join(code);
       socket.data.roomCode = code;
       socket.data.token = token;
-      cb && cb({ ok: true, code, token, role: 'p1', len: LEN, players: roomPublicPlayers(room) });
+      cb && cb({ ok: true, code, token, role: 'p1', len: room.len, players: roomPublicPlayers(room) });
     } catch (err) {
       cb && cb({ ok: false, message: '방을 만들지 못했어요. 다시 시도해주세요.' });
     }
@@ -105,7 +112,7 @@ io.on('connection', (socket) => {
     touch(room);
     room.status = 'setup';
 
-    cb && cb({ ok: true, code, token, role: 'p2', len: LEN, players: roomPublicPlayers(room) });
+    cb && cb({ ok: true, code, token, role: 'p2', len: room.len, players: roomPublicPlayers(room) });
     io.to(code).emit('game:setup', { players: roomPublicPlayers(room) });
   });
 
@@ -127,7 +134,7 @@ io.on('connection', (socket) => {
     socket.data.token = payload.token;
 
     cb && cb({
-      ok: true, code, token: p.token, role: p.role, len: LEN, status: room.status,
+      ok: true, code, token: p.token, role: p.role, len: room.len, status: room.status,
       turn: room.turn, history: room.history, winner: room.winner,
       players: roomPublicPlayers(room),
     });
@@ -140,7 +147,7 @@ io.on('connection', (socket) => {
     const me = playerByToken(room, socket.data.token);
     if (!me) return;
     const secret = String(payload.secret || '');
-    if (!Rules.isValidNumber(secret, LEN)) return;
+    if (!Rules.isValidNumber(secret, room.len)) return;
     me.secret = secret;
     touch(room);
 
@@ -164,7 +171,7 @@ io.on('connection', (socket) => {
     const me = playerByToken(room, socket.data.token);
     if (!me || me.token !== room.turn) return;
     const guess = String(payload.guess || '');
-    if (!Rules.isValidNumber(guess, LEN)) return;
+    if (!Rules.isValidNumber(guess, room.len)) return;
     const opp = opponentOf(room, me.token);
     if (!opp || !opp.secret) return;
 
@@ -174,7 +181,7 @@ io.on('connection', (socket) => {
     touch(room);
 
     let winner = null;
-    if (Rules.isHomerun(g.strikes, LEN)) {
+    if (Rules.isHomerun(g.strikes, room.len)) {
       winner = me.token;
       room.status = 'ended';
       room.winner = winner;

@@ -138,6 +138,8 @@ select {
 .level-btn small { font-size: 9px; color: var(--muted); }
 .level-btn.selected { border-color: var(--gold); background: #fbe0dd; }
 
+.len-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0 12px; }
+
 /* ---------- 둘이서 대결 ---------- */
 .two-player { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .tp-col { flex: 1; text-align: center; }

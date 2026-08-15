@@ -192,16 +192,25 @@
     return socket;
   }
 
+  let onlineCreateLen = 3;
+  $$('#lenGridOnline .level-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      $$('#lenGridOnline .level-btn').forEach((b) => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      onlineCreateLen = Number(btn.dataset.len);
+    });
+  });
+
   $('#createRoom').addEventListener('click', () => {
     saveProfile();
     ensureSocket();
-    state.len = R.LEN;
     $('#netStatus').textContent = '';
-    socket.emit('room:create', { name: state.profile.name || '플레이어', avatar: state.profile.avatar || '🙂' }, (res) => {
+    socket.emit('room:create', { name: state.profile.name || '플레이어', avatar: state.profile.avatar || '🙂', len: onlineCreateLen }, (res) => {
       if (!res.ok) { $('#netStatus').textContent = res.message; return; }
       state.online.code = res.code;
       state.online.token = res.token;
       state.online.myRole = res.role;
+      state.len = res.len;
       sessionStorage.setItem('baseball_room', JSON.stringify({ code: res.code, token: res.token }));
       $('#roomCode').textContent = res.code;
       $('#waitingBox').classList.remove('hidden');
@@ -211,7 +220,6 @@
   $('#joinRoom').addEventListener('click', () => {
     saveProfile();
     ensureSocket();
-    state.len = R.LEN;
     const code = $('#joinCode').value.trim().toUpperCase();
     if (code.length < 4) { $('#netStatus').textContent = '초대 코드를 확인해주세요.'; return; }
     $('#netStatus').textContent = '';
@@ -220,6 +228,7 @@
       state.online.code = res.code;
       state.online.token = res.token;
       state.online.myRole = res.role;
+      state.len = res.len;
       sessionStorage.setItem('baseball_room', JSON.stringify({ code: res.code, token: res.token }));
       startGame('online', true);
     });
@@ -260,6 +269,7 @@
         socket.emit('room:rejoin', { code: state.online.code, token: state.online.token }, (res) => {
           if (!res || !res.ok) return;
           state.online.myRole = res.role;
+          state.len = res.len;
           const meP = res.players.find((p) => p.token === res.token);
           const oppP = res.players.find((p) => p.token !== res.token);
           state.players.me = meP ? { name: meP.name, avatar: meP.avatar } : state.players.me;
@@ -915,6 +925,7 @@
           state.online.code = res.code;
           state.online.token = res.token;
           state.online.myRole = res.role;
+          state.len = res.len;
           const meP = res.players.find((p) => p.token === res.token);
           const oppP = res.players.find((p) => p.token !== res.token);
           state.players.me = meP ? { name: meP.name, avatar: meP.avatar } : state.players.me;

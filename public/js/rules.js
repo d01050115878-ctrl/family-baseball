@@ -10,6 +10,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
 
   const LEN = 3; // 자릿수 (표준 숫자야구: 서로 다른 숫자 3개)
+  const ALLOWED_LENS = [3, 4, 5]; // 온라인 대전에서 고를 수 있는 자릿수
 
   function randomSecret(len) {
     len = len || LEN;
@@ -73,7 +74,7 @@
   }
 
   return {
-    LEN, randomSecret, isValidNumber, grade, isHomerun,
+    LEN, ALLOWED_LENS, randomSecret, isValidNumber, grade, isHomerun,
     allCandidates, filterCandidates,
   };
 });
