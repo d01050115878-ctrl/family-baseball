@@ -211,7 +211,7 @@
       state.online.token = res.token;
       state.online.myRole = res.role;
       state.len = res.len;
-      sessionStorage.setItem('baseball_room', JSON.stringify({ code: res.code, token: res.token }));
+      localStorage.setItem('baseball_room', JSON.stringify({ code: res.code, token: res.token }));
       $('#roomCode').textContent = res.code;
       $('#waitingBox').classList.remove('hidden');
     });
@@ -229,7 +229,7 @@
       state.online.token = res.token;
       state.online.myRole = res.role;
       state.len = res.len;
-      sessionStorage.setItem('baseball_room', JSON.stringify({ code: res.code, token: res.token }));
+      localStorage.setItem('baseball_room', JSON.stringify({ code: res.code, token: res.token }));
       startGame('online', true);
     });
   });
@@ -254,7 +254,7 @@
   $('#copyLink').addEventListener('click', () => copyText(inviteUrl(), '초대 링크를 복사했어요!'));
   $('#cancelRoom').addEventListener('click', () => {
     socket && socket.emit('room:leave');
-    sessionStorage.removeItem('baseball_room');
+    localStorage.removeItem('baseball_room');
     $('#waitingBox').classList.add('hidden');
     state.online = { code: null, token: null, myRole: null, connected: false };
   });
@@ -789,7 +789,7 @@
   function goHome() {
     if (state.mode === 'online' && socket) {
       socket.emit('room:leave');
-      sessionStorage.removeItem('baseball_room');
+      localStorage.removeItem('baseball_room');
     }
     state.mode = null;
     state.online = { code: null, token: null, myRole: null, connected: false };
@@ -917,11 +917,11 @@
     buildLearnList();
 
     try {
-      const saved = JSON.parse(sessionStorage.getItem('baseball_room') || 'null');
+      const saved = JSON.parse(localStorage.getItem('baseball_room') || 'null');
       if (saved && saved.code && saved.token) {
         ensureSocket();
         socket.emit('room:rejoin', saved, (res) => {
-          if (!res || !res.ok) { sessionStorage.removeItem('baseball_room'); return; }
+          if (!res || !res.ok) { localStorage.removeItem('baseball_room'); return; }
           state.online.code = res.code;
           state.online.token = res.token;
           state.online.myRole = res.role;
