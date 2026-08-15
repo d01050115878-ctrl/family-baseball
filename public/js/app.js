@@ -251,7 +251,39 @@
   });
 
   function wireSocketEvents() {
-    socket.on('connect', () => { state.online.connected = true; });
+    socket.on('connect', () => {
+      state.online.connected = true;
+      // 재접속 시(백그라운드 전환, 네트워크 끊김 등) 서버 쪽 소켓 연결이 새로 맺어지면서
+      // 이전에 들어가 있던 방에서 자동으로 빠지므로, 저장해둔 코드/토큰으로 다시 합류를 시도한다.
+      // (이걸 안 하면 방장이 대기 중 연결이 끊겼다 붙었을 때 상대가 들어와도 그 신호를 영영 못 받는다)
+      if (state.online.code && state.online.token) {
+        socket.emit('room:rejoin', { code: state.online.code, token: state.online.token }, (res) => {
+          if (!res || !res.ok) return;
+          state.online.myRole = res.role;
+          const meP = res.players.find((p) => p.token === res.token);
+          const oppP = res.players.find((p) => p.token !== res.token);
+          state.players.me = meP ? { name: meP.name, avatar: meP.avatar } : state.players.me;
+          state.players.opp = oppP ? { name: oppP.name, avatar: oppP.avatar } : state.players.opp;
+
+          if (res.status === 'playing' || res.status === 'ended') {
+            state.mode = 'online';
+            state.history = (res.history || []).map((h) => ({
+              actor: h.by === res.token ? 'me' : 'opp', guess: h.guess, strikes: h.strikes, balls: h.balls, out: h.out,
+            }));
+            state.turn = res.turn === res.token ? 'me' : 'opp';
+            state.status = res.status;
+            state.winner = res.winner ? (res.winner === res.token ? 'me' : 'opp') : null;
+            if ($('#screen-game').classList.contains('active')) {
+              $('#setupBox').classList.add('hidden');
+              $('#playBox').classList.remove('hidden');
+              renderLogsFor('me', 'opp');
+              updateTurnUI();
+              if (state.status === 'ended') onGameEnd(true);
+            }
+          }
+        });
+      }
+    });
     socket.on('disconnect', () => { state.online.connected = false; });
 
     socket.on('game:setup', (payload) => {
