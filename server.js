@@ -12,6 +12,11 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' },
+  // 모바일에서 화면이 꺼지거나 앱을 전환하면 브라우저가 타이머/네트워크를 강하게 제한해서
+  // 기본값(핑 간격 25초 + 타임아웃 20초)보다 오래 응답이 없을 수 있다. 넉넉하게 잡아서
+  // 실제로 끊긴 게 아닌데 끊긴 걸로 오판하는 경우를 줄인다.
+  pingInterval: 25000,
+  pingTimeout: 60000,
 });
 
 const PORT = process.env.PORT || 3000;
@@ -28,8 +33,10 @@ app.get('/healthz', (req, res) => res.send('ok'));
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
-const ROOM_TTL_MS = 10 * 60 * 1000;
-const RECONNECT_GRACE_MS = 2 * 60 * 1000;
+// 게임 도중엔 한쪽이 오래 고민하며 화면을 꺼두는 일이 흔해서, 너무 짧으면 활동 중인 방이
+// 삭제되거나 재접속 유예시간을 넘겨 상대가 방에서 제거되는 문제가 생긴다. 넉넉하게 잡는다.
+const ROOM_TTL_MS = 30 * 60 * 1000;
+const RECONNECT_GRACE_MS = 10 * 60 * 1000;
 
 function genCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -132,6 +139,7 @@ io.on('connection', (socket) => {
     socket.join(code);
     socket.data.roomCode = code;
     socket.data.token = payload.token;
+    touch(room);
 
     cb && cb({
       ok: true, code, token: p.token, role: p.role, len: room.len, status: room.status,
@@ -165,15 +173,23 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('game:guess', (payload = {}) => {
+  socket.on('game:guess', (payload = {}, cb) => {
     const room = rooms.get(socket.data.roomCode);
-    if (!room || room.status !== 'playing') return;
+    if (!room || room.status !== 'playing') {
+      return cb && cb({ ok: false, message: '게임 방을 찾을 수 없어요. 새로고침 후 다시 접속해주세요.' });
+    }
     const me = playerByToken(room, socket.data.token);
-    if (!me || me.token !== room.turn) return;
+    if (!me || me.token !== room.turn) {
+      return cb && cb({ ok: false, message: '아직 내 차례가 아니에요.' });
+    }
     const guess = String(payload.guess || '');
-    if (!Rules.isValidNumber(guess, room.len)) return;
+    if (!Rules.isValidNumber(guess, room.len)) {
+      return cb && cb({ ok: false, message: '숫자를 다시 확인해주세요.' });
+    }
     const opp = opponentOf(room, me.token);
-    if (!opp || !opp.secret) return;
+    if (!opp || !opp.secret) {
+      return cb && cb({ ok: false, message: '상대방을 찾을 수 없어요.' });
+    }
 
     const g = Rules.grade(opp.secret, guess);
     const entry = { by: me.token, guess, strikes: g.strikes, balls: g.balls, out: g.out };
@@ -192,6 +208,7 @@ io.on('connection', (socket) => {
     io.to(room.code).emit('game:guess-result', {
       entry, turn: room.turn, status: room.status, winner,
     });
+    cb && cb({ ok: true });
   });
 
   socket.on('game:resign', () => {

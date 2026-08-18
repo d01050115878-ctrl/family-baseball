@@ -187,6 +187,7 @@ select {
 .player-bar.turn .dot { background: var(--good); box-shadow: 0 0 0 4px rgba(47, 158, 86, .2); }
 .player-bar .pname { font-weight: 700; font-size: 14px; }
 .inning-tag { font-size: 12px; font-weight: 800; color: var(--muted); background: #eef7f0; padding: 3px 8px; border-radius: 10px; }
+.secret-tag { font-size: 12px; font-weight: 800; color: #a1631f; background: #fdf1dc; padding: 3px 8px; border-radius: 10px; letter-spacing: 1px; }
 
 /* ---------- 번호 설정 / 화면 넘기기 ---------- */
 .setup-box, .pass-box, .play-box {

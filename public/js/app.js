@@ -259,40 +259,52 @@
     state.online = { code: null, token: null, myRole: null, connected: false };
   });
 
+  // 재접속 시(백그라운드 전환, 네트워크 끊김 등) 서버 쪽 소켓 연결이 새로 맺어지면서
+  // 이전에 들어가 있던 방에서 자동으로 빠지므로, 저장해둔 코드/토큰으로 다시 합류를 시도한다.
+  // (이걸 안 하면 방장이 대기 중 연결이 끊겼다 붙었을 때 상대가 들어와도 그 신호를 영영 못 받는다)
+  function rejoinRoom(onFail) {
+    if (!state.online.code || !state.online.token) return;
+    socket.emit('room:rejoin', { code: state.online.code, token: state.online.token }, (res) => {
+      if (!res || !res.ok) {
+        // 오래 자리를 비운 사이 서버에서 방/상대가 정리됐을 수 있다. 화면이 그냥 멈춘 것처럼
+        // 보이지 않도록 사용자에게 분명히 알려준다.
+        if (state.mode === 'online' && $('#screen-game').classList.contains('active')) {
+          toast('연결이 오래 끊겨 있어서 대결방이 종료됐어요. 다시 방을 만들어주세요.');
+        }
+        localStorage.removeItem('baseball_room');
+        if (onFail) onFail();
+        return;
+      }
+      state.online.myRole = res.role;
+      state.len = res.len;
+      const meP = res.players.find((p) => p.token === res.token);
+      const oppP = res.players.find((p) => p.token !== res.token);
+      state.players.me = meP ? { name: meP.name, avatar: meP.avatar } : state.players.me;
+      state.players.opp = oppP ? { name: oppP.name, avatar: oppP.avatar } : state.players.opp;
+
+      if (res.status === 'playing' || res.status === 'ended') {
+        state.mode = 'online';
+        state.history = (res.history || []).map((h) => ({
+          actor: h.by === res.token ? 'me' : 'opp', guess: h.guess, strikes: h.strikes, balls: h.balls, out: h.out,
+        }));
+        state.turn = res.turn === res.token ? 'me' : 'opp';
+        state.status = res.status;
+        state.winner = res.winner ? (res.winner === res.token ? 'me' : 'opp') : null;
+        if ($('#screen-game').classList.contains('active')) {
+          $('#setupBox').classList.add('hidden');
+          $('#playBox').classList.remove('hidden');
+          renderLogsFor('me', 'opp');
+          updateTurnUI();
+          if (state.status === 'ended') onGameEnd(true);
+        }
+      }
+    });
+  }
+
   function wireSocketEvents() {
     socket.on('connect', () => {
       state.online.connected = true;
-      // 재접속 시(백그라운드 전환, 네트워크 끊김 등) 서버 쪽 소켓 연결이 새로 맺어지면서
-      // 이전에 들어가 있던 방에서 자동으로 빠지므로, 저장해둔 코드/토큰으로 다시 합류를 시도한다.
-      // (이걸 안 하면 방장이 대기 중 연결이 끊겼다 붙었을 때 상대가 들어와도 그 신호를 영영 못 받는다)
-      if (state.online.code && state.online.token) {
-        socket.emit('room:rejoin', { code: state.online.code, token: state.online.token }, (res) => {
-          if (!res || !res.ok) return;
-          state.online.myRole = res.role;
-          state.len = res.len;
-          const meP = res.players.find((p) => p.token === res.token);
-          const oppP = res.players.find((p) => p.token !== res.token);
-          state.players.me = meP ? { name: meP.name, avatar: meP.avatar } : state.players.me;
-          state.players.opp = oppP ? { name: oppP.name, avatar: oppP.avatar } : state.players.opp;
-
-          if (res.status === 'playing' || res.status === 'ended') {
-            state.mode = 'online';
-            state.history = (res.history || []).map((h) => ({
-              actor: h.by === res.token ? 'me' : 'opp', guess: h.guess, strikes: h.strikes, balls: h.balls, out: h.out,
-            }));
-            state.turn = res.turn === res.token ? 'me' : 'opp';
-            state.status = res.status;
-            state.winner = res.winner ? (res.winner === res.token ? 'me' : 'opp') : null;
-            if ($('#screen-game').classList.contains('active')) {
-              $('#setupBox').classList.add('hidden');
-              $('#playBox').classList.remove('hidden');
-              renderLogsFor('me', 'opp');
-              updateTurnUI();
-              if (state.status === 'ended') onGameEnd(true);
-            }
-          }
-        });
-      }
+      rejoinRoom();
     });
     socket.on('disconnect', () => { state.online.connected = false; });
 
@@ -562,7 +574,13 @@
       }
     } else if (state.mode === 'online') {
       if (state.turn !== 'me') return;
-      socket.emit('game:guess', { guess: v });
+      socket.emit('game:guess', { guess: v }, (res) => {
+        if (res && res.ok === false) {
+          toast(res.message || '전송에 실패했어요. 연결을 확인해주세요.');
+          // 서버 상태와 어긋났을 수 있으니 최신 상태로 다시 맞춘다
+          rejoinRoom();
+        }
+      });
       $('#guessInput').value = ''; guessCheck();
     }
   }
@@ -689,6 +707,20 @@
     $('#barBottom .pname').textContent = bottomP.name;
     $('#avatarTop').textContent = topP.avatar;
     $('#barTop .pname').textContent = topP.name;
+
+    let mySecretForDisplay = null;
+    if (state.mode === 'local') {
+      mySecretForDisplay = (state.turn || 'p1') === 'p1' ? state.p1Secret : state.p2Secret;
+    } else {
+      mySecretForDisplay = state.mySecret;
+    }
+    const secretTag = $('#mySecretTag');
+    if (mySecretForDisplay) {
+      secretTag.textContent = `내 번호 ${mySecretForDisplay}`;
+      secretTag.classList.remove('hidden');
+    } else {
+      secretTag.classList.add('hidden');
+    }
 
     const counts = {};
     state.history.forEach((h) => { counts[h.actor] = (counts[h.actor] || 0) + 1; });
